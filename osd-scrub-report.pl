@@ -71,9 +71,7 @@ say "";
 say 'PGs marked with a * are not scrubbing because of busy OSDs.';
 
 sub str2time {
-    my ($str) = @_;
-    my ($y, $m, $d, $H, $M, $S) = $str =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/;
-    return timegm($S, $M, $H, $d, $m - 1, $y);
+    return timegm($6, $5, $4, $3, $2 - 1, $1) if $_[0] =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/;
 }
 
 sub extract_datetime {
