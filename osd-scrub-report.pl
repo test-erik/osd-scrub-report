@@ -110,17 +110,9 @@ sub update_intervals_and_ids {
         }
     }
 }
-
 sub update_max_intervals {
-    my ($scrub_intervals, $deep_scrub_intervals) = @_;
-    if ($max_scrub_interval < $scrub_intervals) {
-        $max_scrub_interval = $scrub_intervals;
-    }
-    if ($max_deep_scrub_interval < $deep_scrub_intervals) {
-        $max_deep_scrub_interval = $deep_scrub_intervals;
-    }
+    ($max_scrub_interval, $max_deep_scrub_interval) = map { $_[0] > $max_scrub_interval ? $_[0] : $max_scrub_interval, $_[1] > $max_deep_scrub_interval ? $_[1] : $max_deep_scrub_interval } @_;
 }
-
 sub update_osd_state {
     my ($state, @acting) = @_;
     if ($state =~ /scrubbing\+deep/ || $state =~ /scrubbing/ || $state !~ /active\+clean/) {
