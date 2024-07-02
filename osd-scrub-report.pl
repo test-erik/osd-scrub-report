@@ -77,11 +77,7 @@ sub str2time {
 }
 
 sub extract_datetime {
-    my ($datetime_str) = @_;
-    if ($datetime_str =~ /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/) {
-        return $1 . "Z";
-    }
-    return "";
+    return $_[0] =~ /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/ ? "$1Z" : "";
 }
 
 sub update_intervals_and_ids {
