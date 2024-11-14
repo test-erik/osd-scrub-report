@@ -63,19 +63,38 @@ say "";
 say "Deep-Scrub Report:";
 generate_report(\%pg_deep_scrub_intervals, \%deep_scrubbing, \%unclean_deep, \%pg_deep_scrub_ids, $max_deep_scrub_interval, "24h");
 
+# Sammeln der OSDs aus der Zeile mit den meisten Intervallen
+my %osds_to_highlight;
+
+if (exists $pg_deep_scrub_ids{$max_deep_scrub_interval}) {
+    my @pgs = split ' ', $pg_deep_scrub_ids{$max_deep_scrub_interval};
+    foreach my $pg (@pgs) {
+        my @osds = split ' ', $pg_osds{$pg};
+        foreach my $osd_id (@osds) {
+            $osds_to_highlight{$osd_id} = 1;
+        }
+    }
+}
+
 say "";
 say "Current Deep Scrubs:";
-get_current_deep_scrubs();
+get_current_deep_scrubs(\%osds_to_highlight);
 
 say "";
 say 'PGs marked with a * are not scrubbing because of busy OSDs.';
 
 sub str2time {
-    return timegm($6, $5, $4, $3, $2 - 1, $1) if $_[0] =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/;
+    my ($str) = @_;
+    my ($y, $m, $d, $H, $M, $S) = $str =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/;
+    return timegm($S, $M, $H, $d, $m - 1, $y);
 }
 
 sub extract_datetime {
-    return $_[0] =~ /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/ ? "$1Z" : "";
+    my ($datetime_str) = @_;
+    if ($datetime_str =~ /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/) {
+        return $1 . "Z";
+    }
+    return "";
 }
 
 sub update_intervals_and_ids {
@@ -104,9 +123,13 @@ sub update_intervals_and_ids {
         }
     }
 }
+
 sub update_max_intervals {
-    ($max_scrub_interval, $max_deep_scrub_interval) = map { $_[0] > $max_scrub_interval ? $_[0] : $max_scrub_interval, $_[1] > $max_deep_scrub_interval ? $_[1] : $max_deep_scrub_interval } @_;
+    my ($scrub_intervals, $deep_scrub_intervals) = @_;
+    $max_scrub_interval = $scrub_intervals if $scrub_intervals > $max_scrub_interval;
+    $max_deep_scrub_interval = $deep_scrub_intervals if $deep_scrub_intervals > $max_deep_scrub_interval;
 }
+
 sub update_osd_state {
     my ($state, @acting) = @_;
     if ($state =~ /scrubbing\+deep/ || $state =~ /scrubbing/ || $state !~ /active\+clean/) {
@@ -151,6 +174,9 @@ sub generate_report {
 }
 
 sub get_current_deep_scrubs {
+    my ($osds_to_highlight_ref) = @_;
+    my %osds_to_highlight = %{$osds_to_highlight_ref};
+
     my $cmd = "ceph pg dump 2> /dev/null";
     open my $fh, '-|', $cmd or die "Could not run ceph pg dump: $!";
 
@@ -174,6 +200,19 @@ sub get_current_deep_scrubs {
     @deep_scrubs = sort { $a->[0] <=> $b->[0] } @deep_scrubs;
     printf("%s   %s      %s\n", "Since:", "OSDs:", "PG:");
     foreach my $scrub (@deep_scrubs) {
-        printf("%6ss  %s  %s\n", $scrub->[0], $scrub->[1], $scrub->[2]);
+        my $osd_field = $scrub->[1];
+        my $osd_list_str = $osd_field;
+        $osd_list_str =~ s/[\[\]]//g;
+        my @osd_ids = split /,/, $osd_list_str;
+        @osd_ids = map { s/^\s+|\s+$//g; $_ } @osd_ids;
+        my @highlighted_osd_ids;
+        foreach my $osd_id (@osd_ids) {
+            if (exists $osds_to_highlight{$osd_id}) {
+                $osd_id = "\e[31m$osd_id\e[0m"; # Highlight in red
+            }
+            push @highlighted_osd_ids, $osd_id;
+        }
+        my $highlighted_osd_field = '[' . join(',', @highlighted_osd_ids) . ']';
+        printf("%6ss  %s  %s\n", $scrub->[0], $highlighted_osd_field, $scrub->[2]);
     }
 }
