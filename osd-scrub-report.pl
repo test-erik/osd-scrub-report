@@ -82,6 +82,7 @@ get_current_deep_scrubs(\%osds_to_highlight);
 
 say "";
 say 'PGs marked with a * are not scrubbing because of busy OSDs.';
+say 'OSDs highlighted in red block the longest waiting PG of deep-scrub.';
 
 sub str2time {
     my ($str) = @_;
