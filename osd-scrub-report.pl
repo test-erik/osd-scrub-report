@@ -164,9 +164,7 @@ sub generate_report {
                     }
                 }
                 printf(" %s%s", $pg, $osds_busy ? "*" : "");
-                if ($osds_busy) {
-                    printf(" (%s)", join(", ", @busy_osds));
-                }
+                printf(" (%s)", join(", ", @osds)); # Immer alle OSDs anzeigen
             }
         }
         say "";
