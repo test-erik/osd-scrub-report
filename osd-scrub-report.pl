@@ -34,6 +34,7 @@ my %scrubbing;
 my %unclean;
 my %unclean_deep;
 my %osd;
+my %pg_deep_interval_map;  # pgid -> deep_scrub_intervals (24h-Bins seit letztem Deep-Scrub)
 
 my $max_scrub_interval = 0;
 my $max_deep_scrub_interval = 0;
@@ -84,6 +85,22 @@ say "";
 say 'PGs marked with a * are not scrubbing because of busy OSDs.';
 say 'OSDs highlighted in red block the longest waiting PG of deep-scrub.';
 
+sub _ansi_strip {
+    my ($s) = @_;
+    $s =~ s/\e\[[0-9;]*m//g;  # ANSI SGR entfernen
+    return $s;
+}
+
+sub _pad_fixed {
+    my ($s, $width, $align) = @_;
+    $align //= 'left';
+    my $visible = _ansi_strip($s);
+    my $len = length($visible);
+    return $s if $len >= $width;  # zu lang: nicht abschneiden, nur zurückgeben
+    my $pad = ' ' x ($width - $len);
+    return $align eq 'right' ? ($pad . $s) : ($s . $pad);
+}
+
 sub str2time {
     my ($str) = @_;
     my ($y, $m, $d, $H, $M, $S) = $str =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/;
@@ -100,7 +117,10 @@ sub extract_datetime {
 
 sub update_intervals_and_ids {
     my ($state, $pgid, $scrub_intervals, $deep_scrub_intervals) = @_;
-
+    
+    # Für die spätere Live-Ansicht merken wir uns immer die zuletzt berechneten Deep-Intervalle pro PG.
+    $pg_deep_interval_map{$pgid} = $deep_scrub_intervals;
+    
     given ($state) {
         when ("active+clean") {
             $pg_scrub_intervals{$scrub_intervals}++;
@@ -132,11 +152,15 @@ sub update_max_intervals {
 }
 
 sub update_osd_state {
-    my ($state, @acting) = @_;
-    if ($state =~ /scrubbing\+deep/ || $state =~ /scrubbing/ || $state !~ /active\+clean/) {
-        foreach my $osd_id (@acting) {
-            $osd{$osd_id} = "busy";
-        }
+    my ($state, @acting) = @_;   
+#    if ($state =~ /scrubbing\+deep/ || $state =~ /scrubbing/ || $state !~ /active\+clean/) {
+#        foreach my $osd_id (@acting) {
+#            $osd{$osd_id} = "busy";
+#        }
+#    }
+    return unless $state =~ /scrubbing/;  # matched auch scrubbing+deep
+    foreach my $osd_id (@acting) {
+        $osd{$osd_id} = "busy";
     }
 }
 
@@ -197,7 +221,11 @@ sub get_current_deep_scrubs {
     close $fh;
 
     @deep_scrubs = sort { $a->[0] <=> $b->[0] } @deep_scrubs;
-    printf("%s   %s      %s\n", "Since:", "OSDs:", "PG:");
+    # printf("%s   %s      %s\n", "Since:", "OSDs:", "PG:");
+    # printf("%s   %s      %s   %s\n", "Since:", "OSDs:", "PG:", "PrevInt(24h):");
+    printf("%-8s %-20s %-12s %6s\n", "Since", "OSDs", "PG", "PrevInt");
+    
+    
     foreach my $scrub (@deep_scrubs) {
         my $osd_field = $scrub->[1];
         my $osd_list_str = $osd_field;
@@ -212,6 +240,19 @@ sub get_current_deep_scrubs {
             push @highlighted_osd_ids, $osd_id;
         }
         my $highlighted_osd_field = '[' . join(',', @highlighted_osd_ids) . ']';
-        printf("%6ss  %s  %s\n", $scrub->[0], $highlighted_osd_field, $scrub->[2]);
+        # printf("%6ss  %s  %s\n", $scrub->[0], $highlighted_osd_field, $scrub->[2]);
+        # my $pgid = $scrub->[2];
+        # my $prev_intervals = exists $pg_deep_interval_map{$pgid} ? $pg_deep_interval_map{$pgid} : "-";
+        # printf("%6ss  %-16s  %-8s  %-3s\n", $scrub->[0], $highlighted_osd_field, $pgid, $prev_intervals);
+        my $pgid = $scrub->[2];
+        my $prev_intervals = exists $pg_deep_interval_map{$pgid} ? $pg_deep_interval_map{$pgid} : "-";
+        my $secs = $scrub->[0];
+    
+    my $osds_fixed = _pad_fixed($highlighted_osd_field, 20, 'left');  # Breite 20, ANSI-sicher
+        printf("%6s   %s %-12s %4s\n",
+            $secs . "s",
+            $osds_fixed,
+            $pgid,
+            $prev_intervals);
     }
 }
